@@ -1,47 +1,51 @@
 package com.example.vpn_app_android
 
+import android.content.Intent
+import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.example.vpn_app_android.ui.theme.Vpn_app_androidTheme
 
 class MainActivity : ComponentActivity() {
+    private var vpnRunning by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
         setContent {
             Vpn_app_androidTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Button(onClick = {
+                        if (!vpnRunning) {
+                            val intent = VpnService.prepare(this@MainActivity)
+                            if (intent != null) {
+                                startActivityForResult(intent, 0)
+                            } else {
+                                onActivityResult(0, RESULT_OK, null)
+                            }
+                        } else {
+                            stopService(Intent(this@MainActivity, MyVpnService::class.java))
+                            vpnRunning = false
+                        }
+                    }) {
+                        Text(if (!vpnRunning) "Iniciar VPN Demo" else "Detener VPN")
+                    }
                 }
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    Vpn_app_androidTheme {
-        Greeting("Android")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode == RESULT_OK) {
+            val intent = Intent(this, MyVpnService::class.java)
+            startService(intent)
+            vpnRunning = true
+        }
     }
 }
