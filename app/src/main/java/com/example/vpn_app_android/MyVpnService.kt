@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -13,11 +14,19 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 class MyVpnService : VpnService() {
+    companion object {
+        const val ACTION_STOP_VPN = "com.example.vpn_app_android.STOP_VPN"
+    }//intent especial para que la vpn se detenga
     private var running = false
     private var vpnInterface: ParcelFileDescriptor? = null
     private val channelId = "vpn_channel"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP_VPN) {
+            stopVpn()
+            return START_NOT_STICKY
+        }
+
         startForeground(1, createNotification())
 
         val builder = Builder()
@@ -25,6 +34,15 @@ class MyVpnService : VpnService() {
             .addAddress("10.0.0.2", 24)
             .addRoute("0.0.0.0", 0)
             .addDnsServer("8.8.8.8")
+
+        try {
+            builder.addAllowedApplication("com.whatsapp")
+            builder.addAllowedApplication("com.android.chrome")
+        } catch (e: PackageManager.NameNotFoundException) {
+            e.printStackTrace()
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         vpnInterface = builder.establish()
 
@@ -52,6 +70,8 @@ class MyVpnService : VpnService() {
 
         return START_STICKY
     }
+
+
 
     private fun createNotification(): Notification {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -82,7 +102,14 @@ class MyVpnService : VpnService() {
         vpnInterface?.close()
         stopSelf()
     }
-
+    private fun stopVpn() {
+        running = false
+        println("🛑 VPN detenida manualmente")
+        vpnInterface?.close()
+        vpnInterface = null
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf()
+    }
     override fun onDestroy() {
         running = false
         println("🧹 onDestroy ejecutado")
