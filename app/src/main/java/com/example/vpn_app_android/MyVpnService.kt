@@ -14,16 +14,28 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 class MyVpnService : VpnService() {
+
     companion object {
         const val ACTION_STOP_VPN = "com.example.vpn_app_android.STOP_VPN"
-    }//intent especial para que la vpn se detenga
+    }
+
     private var running = false
     private var vpnInterface: ParcelFileDescriptor? = null
     private val channelId = "vpn_channel"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP_VPN) {
-            stopVpn()
+            println("🛑 Acción STOP_VPN recibida")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            running = false
+            vpnInterface?.close()
+            vpnInterface = null
+            stopSelf()
             return START_NOT_STICKY
         }
 
@@ -59,19 +71,60 @@ class MyVpnService : VpnService() {
             Thread {
                 running = true
                 val buffer = ByteArray(32767)
-                while (running) {
-                    val length = inputStream.read(buffer)
-                    if (length > 0) {
-                        println("DemoVPN: Paquete capturado de $length bytes")
+                try {
+                    while (running) {
+                        val length = inputStream.read(buffer)
+                        if (length > 0) {
+                            val sourceIP = "${buffer[12].toInt() and 0xFF}.${buffer[13].toInt() and 0xFF}.${buffer[14].toInt() and 0xFF}.${buffer[15].toInt() and 0xFF}"
+                            val destIP = "${buffer[16].toInt() and 0xFF}.${buffer[17].toInt() and 0xFF}.${buffer[18].toInt() and 0xFF}.${buffer[19].toInt() and 0xFF}"
+                            val protocolNumber = buffer[9].toInt() and 0xFF
+                            val protocol = when (protocolNumber) {
+                                1 -> "ICMP"
+                                6 -> "TCP"
+                                17 -> "UDP"
+                                else -> "Desconocido"
+                            }
+
+                            var sourcePort = -1
+                            var destPort = -1
+                            var serviceType = ""
+
+                            if (protocol == "TCP" || protocol == "UDP") {
+                                sourcePort = ((buffer[20].toInt() and 0xFF) shl 8) or (buffer[21].toInt() and 0xFF)
+                                destPort = ((buffer[22].toInt() and 0xFF) shl 8) or (buffer[23].toInt() and 0xFF)
+
+                                serviceType = when (destPort) {
+                                    80 -> "HTTP"
+                                    443 -> "HTTPS"
+                                    53 -> "DNS"
+                                    123 -> "NTP"
+                                    25 -> "SMTP"
+                                    110 -> "POP3"
+                                    143 -> "IMAP"
+                                    22 -> "SSH"
+                                    993 -> "IMAPS"
+                                    995 -> "POP3S"
+                                    587 -> "SMTP Secure"
+                                    5222 -> "XMPP (Chat)"
+                                    3478 -> "STUN (WebRTC)"
+                                    1935 -> "RTMP (Streaming)"
+                                    else -> "Otro"
+                                }
+                            }
+
+                            println("📦 Paquete capturado: $length bytes | IP origen: $sourceIP:$sourcePort | IP destino: $destIP:$destPort | Protocolo: $protocol | Servicio: $serviceType")
+                        }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                } finally {
+                    println("Hilo finalizado correctamente")
                 }
             }.start()
         }
 
         return START_STICKY
     }
-
-
 
     private fun createNotification(): Notification {
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -100,16 +153,10 @@ class MyVpnService : VpnService() {
         running = false
         println("🧹 onRevoke ejecutado")
         vpnInterface?.close()
-        stopSelf()
-    }
-    private fun stopVpn() {
-        running = false
-        println("🛑 VPN detenida manualmente")
-        vpnInterface?.close()
         vpnInterface = null
-        stopForeground(STOP_FOREGROUND_DETACH)
         stopSelf()
     }
+
     override fun onDestroy() {
         running = false
         println("🧹 onDestroy ejecutado")
